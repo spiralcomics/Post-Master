@@ -9,6 +9,39 @@ export const BLUESKY_CALLBACK = `${SITE_ORIGIN}/api/oauth/bluesky/callback`;
 export const BLUESKY_METADATA = `${SITE_ORIGIN}/api/oauth/bluesky/client-metadata.json`;
 export const BLUESKY_JWKS = `${SITE_ORIGIN}/api/oauth/bluesky/jwks.json`;
 
+type DidDocument = {
+  id: string;
+  alsoKnownAs?: string[];
+  service?: Array<{ id: string; type: string; serviceEndpoint: string }>;
+  verificationMethod?: unknown[];
+  [key: string]: unknown;
+};
+
+async function resolveBlueskyIdentity(input: string) {
+  let did = input;
+
+  if (!input.startsWith('did:')) {
+    const handleUrl = new URL('https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle');
+    handleUrl.searchParams.set('handle', input);
+    const handleResponse = await fetch(handleUrl, { headers: { accept: 'application/json' } });
+    if (!handleResponse.ok) throw new Error(`Bluesky could not find the account ${input}.`);
+    const resolved = await handleResponse.json() as { did?: string };
+    if (!resolved.did) throw new Error(`Bluesky did not return an identity for ${input}.`);
+    did = resolved.did;
+  }
+
+  const didResponse = await fetch(`https://plc.directory/${encodeURIComponent(did)}`, { headers: { accept: 'application/json' } });
+  if (!didResponse.ok) throw new Error('Bluesky returned an identity that could not be verified.');
+  const didDoc = await didResponse.json() as DidDocument;
+  const declaredHandle = didDoc.alsoKnownAs?.find((value) => value.startsWith('at://'))?.slice(5);
+
+  return {
+    did: didDoc.id,
+    didDoc,
+    handle: declaredHandle || input,
+  };
+}
+
 export const clientMetadata = {
   client_id: BLUESKY_METADATA,
   client_name: 'Postmaster by Spiral Comics',
@@ -33,7 +66,7 @@ export async function getBlueskyClient(): Promise<NodeOAuthClient> {
     keyset: [signingKey],
     stateStore: createSecureStore<NodeSavedState>('bluesky-state', 900),
     sessionStore: createSecureStore<NodeSavedSession>('bluesky-session'),
-    handleResolver: 'https://bsky.social',
+    identityResolver: { resolve: resolveBlueskyIdentity },
     requestLock: requestLocalLock,
   });
 }
