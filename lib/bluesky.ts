@@ -67,6 +67,9 @@ export async function getBlueskyClient(): Promise<NodeOAuthClient> {
     stateStore: createSecureStore<NodeSavedState>('bluesky-state', 900),
     sessionStore: createSecureStore<NodeSavedSession>('bluesky-session'),
     identityResolver: { resolve: resolveBlueskyIdentity },
+    // Prevent the Node client from eagerly constructing its DNS resolver.
+    // Identity resolution is handled above over HTTPS for the Worker runtime.
+    handleResolver: { resolve: async () => undefined },
     requestLock: requestLocalLock,
   });
 }
