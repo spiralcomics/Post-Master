@@ -1,6 +1,7 @@
 import { Agent, RichText } from '@atproto/api';
 import { getDb, getFiles } from '@/db';
 import { getBlueskyAgent } from './bluesky';
+import { publishMeta, type MetaPlatform } from './meta';
 
 type PostRow = { id: string; user_id: string; content: string; link_url: string | null; media_id: string | null };
 type ConnectionRow = { account_id: string; handle: string };
@@ -53,14 +54,30 @@ export async function publishBluesky(postId: string, userId: string) {
   }
 }
 
-export async function publishDueBluesky(userId?: string, limit = 10) {
+export async function publishPostDeliveries(postId: string, userId: string) {
+  const deliveries = await getDb().prepare("SELECT platform FROM post_deliveries WHERE post_id = ? AND status IN ('queued', 'failed') ORDER BY platform").bind(postId).all<{ platform: string }>();
+  const results: Array<{ platform: string; status: string; error?: string }> = [];
+  for (const delivery of deliveries.results) {
+    try {
+      const result = delivery.platform === 'bluesky'
+        ? await publishBluesky(postId, userId)
+        : await publishMeta(postId, userId, delivery.platform as MetaPlatform);
+      results.push({ platform: delivery.platform, status: result.status });
+    } catch (error) {
+      results.push({ platform: delivery.platform, status: 'failed', error: error instanceof Error ? error.message : 'Publishing failed.' });
+    }
+  }
+  return results;
+}
+
+export async function publishDuePosts(userId?: string, limit = 10) {
   const db = getDb();
   const now = Date.now();
   const retryBefore = now - 5 * 60 * 1000;
   const ownerClause = userId ? 'AND p.user_id = ?' : '';
-  const query = `SELECT p.id, p.user_id
+  const query = `SELECT DISTINCT p.id, p.user_id
     FROM posts p
-    JOIN post_deliveries d ON d.post_id = p.id AND d.platform = 'bluesky'
+    JOIN post_deliveries d ON d.post_id = p.id
     WHERE p.scheduled_at IS NOT NULL AND p.scheduled_at <= ?
       AND p.status IN ('scheduled', 'failed')
       AND (d.status = 'queued' OR (d.status = 'failed' AND d.attempts < 3 AND d.updated_at <= ?))
@@ -73,13 +90,12 @@ export async function publishDueBluesky(userId?: string, limit = 10) {
   const results: Array<{ id: string; status: string; error?: string }> = [];
 
   for (const post of due.results) {
-    try {
-      const result = await publishBluesky(post.id, post.user_id);
-      results.push({ id: post.id, status: result.status });
-    } catch (error) {
-      results.push({ id: post.id, status: 'failed', error: error instanceof Error ? error.message : 'Publishing failed.' });
-    }
+    const deliveryResults = await publishPostDeliveries(post.id, post.user_id);
+    const failed = deliveryResults.find((result) => result.status === 'failed');
+    results.push({ id: post.id, status: failed ? 'failed' : 'published', error: failed?.error });
   }
 
   return results;
 }
+
+export const publishDueBluesky = publishDuePosts;

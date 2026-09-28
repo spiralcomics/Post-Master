@@ -8,6 +8,7 @@ type PostStatus = 'Scheduled' | 'Draft' | 'Publishing' | 'Published' | 'Failed' 
 type QueuedPost = { id: string; date: string; month: string; title: string; time: string; channels: string[]; status: PostStatus; content: string; linkUrl: string; scheduledAt: number | null; error?: string; externalUrl?: string };
 type ScheduleToolInput = { copy?: unknown; channels?: unknown; publishAt?: unknown };
 type ModelContext = { registerTool: (tool: { name: string; title: string; description: string; inputSchema: object; annotations: object; execute: (input: ScheduleToolInput) => object }) => void | Promise<void> };
+type MetaSettings = { instagram: { configured: boolean; clientId: string }; threads: { configured: boolean; clientId: string } };
 
 const channelCatalog: Channel[] = [
   { id: 'bluesky', name: 'Bluesky', handle: 'Connect account', color: '#198df3', mark: '☁', connected: false },
@@ -35,6 +36,9 @@ export default function DashboardClient() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [media, setMedia] = useState<{ id: string; filename: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [metaSettings, setMetaSettings] = useState<MetaSettings>({ instagram: { configured: false, clientId: '' }, threads: { configured: false, clientId: '' } });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [metaForm, setMetaForm] = useState({ instagramClientId: '', instagramClientSecret: '', threadsClientId: '', threadsClientSecret: '' });
   const characterLimit = selected.includes('bluesky') ? 300 : 2200;
   const canSubmit = copy.trim().length > 0 && selected.length > 0;
   const connectedCount = channels.filter((channel) => channel.connected).length;
@@ -72,6 +76,14 @@ export default function DashboardClient() {
     } finally { setQueueLoading(false); }
   }
 
+  async function loadMetaSettings() {
+    const response = await fetch('/api/meta/settings');
+    if (!response.ok) return;
+    const data = await response.json() as MetaSettings;
+    setMetaSettings(data);
+    setMetaForm((current) => ({ ...current, instagramClientId: data.instagram.clientId, threadsClientId: data.threads.clientId }));
+  }
+
   useEffect(() => {
     void fetch('/api/connections').then(async (response) => response.ok ? await response.json() as { connections: Array<{ platform: string; handle: string }> } : Promise.reject()).then((data) => {
       const connected = new Map(data.connections.map((item) => [item.platform, item.handle]));
@@ -79,8 +91,11 @@ export default function DashboardClient() {
       if (connected.has('bluesky')) setSelected((current) => current.includes('bluesky') ? current : ['bluesky', ...current]);
     }).catch(() => undefined);
     void loadQueue();
+    void loadMetaSettings();
     const params = new URLSearchParams(window.location.search);
     if (params.get('connected') === 'bluesky') setNotice('Bluesky connected securely.');
+    if (params.get('connected') === 'instagram') setNotice('Instagram connected securely.');
+    if (params.get('connected') === 'threads') setNotice('Threads connected securely.');
     if (params.get('connection_error')) setNotice(params.get('connection_error') || 'Bluesky connection failed.');
   }, []);
 
@@ -123,9 +138,21 @@ export default function DashboardClient() {
     const channel = channels.find((item) => item.id === id);
     if (!channel?.connected) {
       if (id === 'bluesky') { window.location.href = '/api/oauth/bluesky/start?handle=spiralcomics.bsky.social'; return; }
-      setNotice(`${channel?.name} connection is next in the Meta integration.`); return;
+      if ((id === 'instagram' || id === 'threads') && metaSettings[id].configured) { window.location.href = `/api/oauth/meta/${id}/start`; return; }
+      setSettingsOpen(true); setNotice(`Add the ${channel?.name} developer credentials, then connect the account.`); return;
     }
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  async function saveMetaSettings() {
+    setSubmitting(true);
+    try {
+      const response = await fetch('/api/meta/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(metaForm) });
+      const result = await response.json() as MetaSettings & { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Unable to save Meta settings.');
+      setMetaSettings(result); setMetaForm((current) => ({ ...current, instagramClientSecret: '', threadsClientSecret: '' })); setSettingsOpen(false); setNotice('Meta developer settings saved securely. Select Instagram or Threads to connect.');
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to save Meta settings.'); }
+    finally { setSubmitting(false); }
   }
 
   async function saveDraft() {
@@ -193,7 +220,7 @@ export default function DashboardClient() {
           <div className="sidebar-label"><span>CONNECTED ACCOUNTS</span><button aria-label="Add account"><Plus size={15} /></button></div>
           {channels.map((channel) => <button className="account-row" key={channel.id} onClick={() => toggleChannel(channel.id)}><ChannelMark id={channel.id} /><span><strong>{channel.name}</strong><small>{channel.handle}</small></span><i className={channel.connected ? 'status-online' : 'status-offline'} /></button>)}
         </div>
-        <div className="sidebar-bottom"><a href="#settings"><Settings size={18} /> Settings</a><div className="profile"><div className="avatar">SC</div><div><strong>Spiral Comics</strong><small>{connectedCount} accounts connected</small></div><MoreHorizontal size={18} /></div></div>
+        <div className="sidebar-bottom"><button className="settings-link" onClick={() => setSettingsOpen(true)}><Settings size={18} /> Settings</button><div className="profile"><div className="avatar">SC</div><div><strong>Spiral Comics</strong><small>{connectedCount} accounts connected</small></div><MoreHorizontal size={18} /></div></div>
       </aside>
 
       <section className="workspace">
@@ -215,6 +242,7 @@ export default function DashboardClient() {
         </div>
       </section>
       {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
+      {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setSettingsOpen(false); }}><section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="meta-settings-title"><button className="modal-close" onClick={() => setSettingsOpen(false)} aria-label="Close settings"><X size={18} /></button><p className="eyebrow">META DEVELOPER SETUP</p><h2 id="meta-settings-title">Connect Instagram & Threads</h2><p className="settings-intro">Enter credentials from your Meta developer app. Secrets are encrypted and never displayed again.</p><div className="callback-box"><strong>Instagram redirect URL</strong><code>https://spiral-comics-postmaster.rrobinson81.chatgpt.site/api/oauth/meta/instagram/callback</code><strong>Threads redirect URL</strong><code>https://spiral-comics-postmaster.rrobinson81.chatgpt.site/api/oauth/meta/threads/callback</code></div><div className="settings-grid"><label><span>Instagram App ID</span><input value={metaForm.instagramClientId} onChange={(event) => setMetaForm((current) => ({ ...current, instagramClientId: event.target.value }))} placeholder="Instagram App ID" /></label><label><span>Instagram App Secret</span><input type="password" value={metaForm.instagramClientSecret} onChange={(event) => setMetaForm((current) => ({ ...current, instagramClientSecret: event.target.value }))} placeholder={metaSettings.instagram.configured ? 'Saved — enter only to replace' : 'Instagram App Secret'} /></label><label><span>Threads App ID</span><input value={metaForm.threadsClientId} onChange={(event) => setMetaForm((current) => ({ ...current, threadsClientId: event.target.value }))} placeholder="Threads App ID" /></label><label><span>Threads App Secret</span><input type="password" value={metaForm.threadsClientSecret} onChange={(event) => setMetaForm((current) => ({ ...current, threadsClientSecret: event.target.value }))} placeholder={metaSettings.threads.configured ? 'Saved — enter only to replace' : 'Threads App Secret'} /></label></div><div className="settings-actions"><button onClick={() => setSettingsOpen(false)}>Cancel</button><button className="schedule-button" disabled={submitting} onClick={() => void saveMetaSettings()}>{submitting ? 'Saving…' : 'Save securely'}</button></div></section></div>}
       {notice && <div className="toast" role="status"><Check size={17} /><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss"><X size={15} /></button></div>}
     </main>
   );

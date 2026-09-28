@@ -1,5 +1,5 @@
 import { getDb } from '@/db';
-import { publishBluesky } from '@/lib/publish';
+import { publishPostDeliveries } from '@/lib/publish';
 import { authError, requireUserId } from '@/lib/user';
 
 async function postId(context: { params: Promise<{ id: string }> | { id: string } }) {
@@ -22,8 +22,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         db.prepare("UPDATE posts SET status = 'publishing', updated_at = ? WHERE id = ?").bind(now, id),
         db.prepare("UPDATE post_deliveries SET status = 'failed', error_message = NULL, updated_at = ? WHERE post_id = ? AND platform = 'bluesky'").bind(now, id),
       ]);
-      const result = await publishBluesky(id, userId);
-      return Response.json({ post: { id, status: result.status }, bluesky: result });
+      const results = await publishPostDeliveries(id, userId);
+      return Response.json({ post: { id, status: results.some((result) => result.status === 'failed') ? 'failed' : 'published' }, deliveries: results });
     }
 
     const content = typeof body.content === 'string' ? body.content.trim() : '';
@@ -39,8 +39,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       db.prepare("UPDATE post_deliveries SET status = 'queued', error_message = NULL, attempts = 0, updated_at = ? WHERE post_id = ? AND status != 'published'").bind(now, id),
     ]);
     if (body.publishNow === true) {
-      const result = await publishBluesky(id, userId);
-      return Response.json({ post: { id, status: result.status }, bluesky: result });
+      const results = await publishPostDeliveries(id, userId);
+      return Response.json({ post: { id, status: results.some((result) => result.status === 'failed') ? 'failed' : 'published' }, deliveries: results });
     }
     return Response.json({ post: { id, status } });
   } catch (error) {

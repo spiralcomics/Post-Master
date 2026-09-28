@@ -1,5 +1,5 @@
 import { getDb } from '@/db';
-import { publishBluesky, publishDueBluesky } from '@/lib/publish';
+import { publishDuePosts, publishPostDeliveries } from '@/lib/publish';
 import { authError, requireUserId } from '@/lib/user';
 
 const PLATFORMS = new Set(['bluesky', 'instagram', 'threads']);
@@ -7,7 +7,7 @@ const PLATFORMS = new Set(['bluesky', 'instagram', 'threads']);
 export async function GET(request: Request) {
   try {
     const userId = requireUserId(request);
-    await publishDueBluesky(userId);
+    await publishDuePosts(userId);
     const posts = await getDb().prepare(`SELECT id, content, link_url, media_id, scheduled_at, status, created_at, updated_at
       FROM posts WHERE user_id = ? ORDER BY COALESCE(scheduled_at, created_at) ASC LIMIT 100`).bind(userId).all();
     const deliveries = await getDb().prepare(`SELECT d.post_id, d.platform, d.status, d.external_url, d.error_message
@@ -46,9 +46,9 @@ export async function POST(request: Request) {
     }
     await db.batch(statements);
 
-    let blueskyResult: unknown = null;
-    if (body.publishNow === true && platforms.includes('bluesky')) blueskyResult = await publishBluesky(id, userId);
-    return Response.json({ post: { id, status: initialStatus }, bluesky: blueskyResult }, { status: 201 });
+    let publishResults: unknown = null;
+    if (body.publishNow === true) publishResults = await publishPostDeliveries(id, userId);
+    return Response.json({ post: { id, status: initialStatus }, deliveries: publishResults }, { status: 201 });
   } catch (error) {
     return authError(error) ?? Response.json({ error: error instanceof Error ? error.message : 'Unable to save the post.' }, { status: 500 });
   }
