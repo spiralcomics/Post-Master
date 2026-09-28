@@ -138,7 +138,7 @@ export default function DashboardClient() {
     const channel = channels.find((item) => item.id === id);
     if (!channel?.connected) {
       if (id === 'bluesky') { window.location.href = '/api/oauth/bluesky/start?handle=spiralcomics.bsky.social'; return; }
-      if ((id === 'instagram' || id === 'threads') && metaSettings[id].configured) { window.location.href = `/api/oauth/meta/${id}/start`; return; }
+      if (id === 'instagram' || id === 'threads') { window.location.href = `/api/oauth/meta/${id}/start`; return; }
       setSettingsOpen(true); setNotice(`Add the ${channel?.name} developer credentials, then connect the account.`); return;
     }
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
