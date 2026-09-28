@@ -44,7 +44,42 @@ export async function publishBluesky(postId: string, userId: string) {
     return { status: 'published' as const, uri: response.uri, url: externalUrl };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 500) : 'Bluesky publishing failed.';
-    await db.prepare("UPDATE post_deliveries SET status = 'failed', error_message = ?, updated_at = ? WHERE post_id = ? AND platform = 'bluesky'").bind(message, Date.now(), postId).run();
+    const now = Date.now();
+    await db.batch([
+      db.prepare("UPDATE post_deliveries SET status = 'failed', error_message = ?, updated_at = ? WHERE post_id = ? AND platform = 'bluesky'").bind(message, now, postId),
+      db.prepare("UPDATE posts SET status = 'failed', updated_at = ? WHERE id = ?").bind(now, postId),
+    ]);
     throw error;
   }
+}
+
+export async function publishDueBluesky(userId?: string, limit = 10) {
+  const db = getDb();
+  const now = Date.now();
+  const retryBefore = now - 5 * 60 * 1000;
+  const ownerClause = userId ? 'AND p.user_id = ?' : '';
+  const query = `SELECT p.id, p.user_id
+    FROM posts p
+    JOIN post_deliveries d ON d.post_id = p.id AND d.platform = 'bluesky'
+    WHERE p.scheduled_at IS NOT NULL AND p.scheduled_at <= ?
+      AND p.status IN ('scheduled', 'failed')
+      AND (d.status = 'queued' OR (d.status = 'failed' AND d.attempts < 3 AND d.updated_at <= ?))
+      ${ownerClause}
+    ORDER BY p.scheduled_at ASC LIMIT ?`;
+  const statement = userId
+    ? db.prepare(query).bind(now, retryBefore, userId, limit)
+    : db.prepare(query).bind(now, retryBefore, limit);
+  const due = await statement.all<{ id: string; user_id: string }>();
+  const results: Array<{ id: string; status: string; error?: string }> = [];
+
+  for (const post of due.results) {
+    try {
+      const result = await publishBluesky(post.id, post.user_id);
+      results.push({ id: post.id, status: result.status });
+    } catch (error) {
+      results.push({ id: post.id, status: 'failed', error: error instanceof Error ? error.message : 'Publishing failed.' });
+    }
+  }
+
+  return results;
 }

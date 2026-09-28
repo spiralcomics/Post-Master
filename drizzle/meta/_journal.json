@@ -8,6 +8,13 @@
       "when": 1790526672320,
       "tag": "0000_aspiring_genesis",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790614428692,
+      "tag": "0001_glorious_maginty",
+      "breakpoints": true
     }
   ]
 }

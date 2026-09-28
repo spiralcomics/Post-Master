@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, CalendarClock, Check, ChevronDown, Clock3, ExternalLink, Image as ImageIcon, LayoutDashboard, Link2, Menu, MessageSquareText, MoreHorizontal, Plus, Search, Send, Settings, Sparkles, Users, X } from 'lucide-react';
+import { Bell, CalendarClock, Check, Clock3, ExternalLink, Image as ImageIcon, LayoutDashboard, Link2, Menu, MessageSquareText, MoreHorizontal, Pencil, Plus, RotateCcw, Search, Send, Settings, Sparkles, Trash2, Users, X } from 'lucide-react';
 
 type Channel = { id: string; name: string; handle: string; color: string; mark: string; connected: boolean };
-type QueuedPost = { id: number | string; date: string; month: string; title: string; time: string; channels: string[]; status: 'Scheduled' | 'Draft' | 'Published' };
+type PostStatus = 'Scheduled' | 'Draft' | 'Publishing' | 'Published' | 'Failed' | 'Cancelled';
+type QueuedPost = { id: string; date: string; month: string; title: string; time: string; channels: string[]; status: PostStatus; content: string; linkUrl: string; scheduledAt: number | null; error?: string; externalUrl?: string };
 type ScheduleToolInput = { copy?: unknown; channels?: unknown; publishAt?: unknown };
 type ModelContext = { registerTool: (tool: { name: string; title: string; description: string; inputSchema: object; annotations: object; execute: (input: ScheduleToolInput) => object }) => void | Promise<void> };
 
@@ -12,12 +13,6 @@ const channelCatalog: Channel[] = [
   { id: 'bluesky', name: 'Bluesky', handle: 'Connect account', color: '#198df3', mark: '☁', connected: false },
   { id: 'instagram', name: 'Instagram', handle: 'Meta setup next', color: '#e84778', mark: '◎', connected: false },
   { id: 'threads', name: 'Threads', handle: 'Meta setup next', color: '#171717', mark: '@', connected: false },
-];
-
-const initialQueue: QueuedPost[] = [
-  { id: 1, date: '28', month: 'SEP', title: 'Sunday sketchbook: the making of issue #12', time: '9:00 AM', channels: ['bluesky', 'instagram'], status: 'Scheduled' },
-  { id: 2, date: '30', month: 'SEP', title: 'New release day — The Neon Ranger #4', time: '11:30 AM', channels: ['bluesky', 'instagram', 'threads'], status: 'Scheduled' },
-  { id: 3, date: '02', month: 'OCT', title: 'Behind the panels with Maria Chen', time: 'Draft', channels: ['instagram'], status: 'Draft' },
 ];
 
 function ChannelMark({ id, small = false }: { id: string; small?: boolean }) {
@@ -33,7 +28,9 @@ export default function DashboardClient() {
   const [mode, setMode] = useState<'now' | 'later'>('later');
   const [date, setDate] = useState('2026-09-30');
   const [time, setTime] = useState('11:30');
-  const [queue, setQueue] = useState(initialQueue);
+  const [queue, setQueue] = useState<QueuedPost[]>([]);
+  const [queueLoading, setQueueLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [media, setMedia] = useState<{ id: string; filename: string } | null>(null);
@@ -43,12 +40,45 @@ export default function DashboardClient() {
   const connectedCount = channels.filter((channel) => channel.connected).length;
   const previewText = useMemo(() => copy || 'Your post preview will appear here as you write.', [copy]);
 
+  async function loadQueue() {
+    try {
+      const response = await fetch('/api/posts');
+      const data = await response.json() as { posts?: Array<{ id: string; content: string; link_url: string | null; scheduled_at: number | null; status: string }>; deliveries?: Array<{ post_id: string; platform: string; status: string; external_url: string | null; error_message: string | null }>; error?: string };
+      if (!response.ok) throw new Error(data.error || 'Unable to load the queue.');
+      const deliveries = new Map<string, NonNullable<typeof data.deliveries>>();
+      for (const delivery of data.deliveries || []) deliveries.set(delivery.post_id, [...(deliveries.get(delivery.post_id) || []), delivery]);
+      const mapped = (data.posts || []).map((post): QueuedPost => {
+        const postDeliveries = deliveries.get(post.id) || [];
+        const scheduled = post.scheduled_at ? new Date(post.scheduled_at) : null;
+        const status = `${post.status.charAt(0).toUpperCase()}${post.status.slice(1)}` as PostStatus;
+        return {
+          id: post.id,
+          date: scheduled ? String(scheduled.getDate()).padStart(2, '0') : '—',
+          month: scheduled ? scheduled.toLocaleString('en-US', { month: 'short' }).toUpperCase() : status === 'Draft' ? 'DRAFT' : '—',
+          title: post.content,
+          content: post.content,
+          linkUrl: post.link_url || '',
+          scheduledAt: post.scheduled_at,
+          time: scheduled ? scheduled.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' }) : status,
+          channels: postDeliveries.map((delivery) => delivery.platform),
+          status,
+          error: postDeliveries.find((delivery) => delivery.error_message)?.error_message || undefined,
+          externalUrl: postDeliveries.find((delivery) => delivery.external_url)?.external_url || undefined,
+        };
+      });
+      setQueue(mapped.reverse());
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Unable to load the queue.');
+    } finally { setQueueLoading(false); }
+  }
+
   useEffect(() => {
     void fetch('/api/connections').then(async (response) => response.ok ? await response.json() as { connections: Array<{ platform: string; handle: string }> } : Promise.reject()).then((data) => {
       const connected = new Map(data.connections.map((item) => [item.platform, item.handle]));
       setChannels((current) => current.map((channel) => connected.has(channel.id) ? { ...channel, connected: true, handle: `@${connected.get(channel.id)}` } : channel));
       if (connected.has('bluesky')) setSelected((current) => current.includes('bluesky') ? current : ['bluesky', ...current]);
     }).catch(() => undefined);
+    void loadQueue();
     const params = new URLSearchParams(window.location.search);
     if (params.get('connected') === 'bluesky') setNotice('Bluesky connected securely.');
     if (params.get('connection_error')) setNotice(params.get('connection_error') || 'Bluesky connection failed.');
@@ -82,18 +112,9 @@ export default function DashboardClient() {
         const response = await fetch('/api/posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: input.copy.trim(), platforms: input.channels, scheduledAt: input.publishAt }) });
         const result = await response.json() as { post?: { id: string }; error?: string };
         if (!response.ok) throw new Error(result.error || 'Unable to schedule the post.');
-        const newPost: QueuedPost = {
-          id: result.post?.id || Date.now(),
-          date: String(scheduledDate.getDate()).padStart(2, '0'),
-          month: scheduledDate.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
-          title: input.copy.trim(),
-          time: scheduledDate.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' }),
-          channels: input.channels.map(String),
-          status: 'Scheduled',
-        };
-        setQueue((current) => [...current, newPost]);
+        await loadQueue();
         setNotice('Post added to the schedule.');
-        return { id: newPost.id, status: 'scheduled', channels: newPost.channels, publishAt: input.publishAt };
+        return { id: result.post?.id, status: 'scheduled', channels: input.channels, publishAt: input.publishAt };
       },
     })).catch(() => undefined);
   }, []);
@@ -107,25 +128,47 @@ export default function DashboardClient() {
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }
 
-  function saveDraft() {
+  async function saveDraft() {
     if (!copy.trim()) { setNotice('Add a little copy before saving your draft.'); return; }
-    setQueue((current) => [...current, { id: Date.now(), date: '—', month: 'DRAFT', title: copy.trim(), time: 'Not scheduled', channels: selected, status: 'Draft' }]);
-    setNotice('Draft saved to your content queue.');
+    setSubmitting(true);
+    try {
+      const response = await fetch(editingId ? `/api/posts/${editingId}` : '/api/posts', { method: editingId ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: copy, linkUrl: link, platforms: selected, draft: true }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Unable to save the draft.');
+      setCopy(''); setLink(''); setMedia(null); setEditingId(null); await loadQueue(); setNotice('Draft saved to your content queue.');
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to save the draft.'); }
+    finally { setSubmitting(false); }
   }
 
   async function submitPost() {
     if (!canSubmit) { setNotice('Choose a connected account and add some post copy.'); return; }
     const scheduledDate = new Date(`${date}T${time}`);
-    const invalid = Number.isNaN(scheduledDate.getTime());
+    if (mode === 'later' && Number.isNaN(scheduledDate.getTime())) { setNotice('Choose a valid publishing date and time.'); return; }
     setSubmitting(true);
     try {
-      const response = await fetch('/api/posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: copy, linkUrl: link, mediaId: media?.id, platforms: selected, scheduledAt: mode === 'later' ? scheduledDate.toISOString() : null, publishNow: mode === 'now' }) });
+      const response = await fetch(editingId ? `/api/posts/${editingId}` : '/api/posts', { method: editingId ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: copy, linkUrl: link, mediaId: media?.id, platforms: selected, scheduledAt: mode === 'later' ? scheduledDate.toISOString() : null, publishNow: mode === 'now' }) });
       const result = await response.json() as { post?: { id: string }; bluesky?: { status?: string }; error?: string };
       if (!response.ok) throw new Error(result.error || 'Unable to save the post.');
-      setQueue((current) => [...current, { id: result.post?.id || Date.now(), date: mode === 'now' ? String(new Date().getDate()).padStart(2, '0') : invalid ? '—' : String(scheduledDate.getDate()).padStart(2, '0'), month: mode === 'now' ? new Date().toLocaleString('en-US', { month: 'short' }).toUpperCase() : invalid ? 'DATE' : scheduledDate.toLocaleString('en-US', { month: 'short' }).toUpperCase(), title: copy.trim(), time: mode === 'now' ? 'Just now' : invalid ? 'Time needed' : scheduledDate.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' }), channels: selected, status: result.bluesky?.status === 'published' ? 'Published' : 'Scheduled' }]);
-      setCopy(''); setLink(''); setMedia(null); setNotice(mode === 'now' ? 'Post published to Bluesky.' : 'Post added to the durable schedule.');
+      setCopy(''); setLink(''); setMedia(null); setEditingId(null); await loadQueue(); setNotice(mode === 'now' ? 'Post published to Bluesky.' : 'Post added to the durable schedule.');
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to save the post.'); }
     finally { setSubmitting(false); }
+  }
+
+  function editPost(post: QueuedPost) {
+    setEditingId(post.id); setCopy(post.content); setLink(post.linkUrl); setSelected(post.channels);
+    if (post.scheduledAt) { const scheduled = new Date(post.scheduledAt); setDate(scheduled.toLocaleDateString('en-CA')); setTime(`${String(scheduled.getHours()).padStart(2, '0')}:${String(scheduled.getMinutes()).padStart(2, '0')}`); setMode('later'); }
+    else setMode('later');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setNotice('Post loaded into the composer.');
+  }
+
+  async function queueAction(post: QueuedPost, action: 'cancel' | 'retry') {
+    try {
+      const response = await fetch(`/api/posts/${post.id}`, { method: action === 'cancel' ? 'DELETE' : 'PATCH', headers: { 'content-type': 'application/json' }, body: action === 'retry' ? JSON.stringify({ action: 'retry' }) : undefined });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || `Unable to ${action} the post.`);
+      await loadQueue(); setNotice(action === 'retry' ? 'Post published successfully.' : 'Scheduled post cancelled.');
+    } catch (error) { setNotice(error instanceof Error ? error.message : `Unable to ${action} the post.`); }
   }
 
   async function uploadImage(file: File) {
@@ -156,19 +199,19 @@ export default function DashboardClient() {
       <section className="workspace">
         <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen((open) => !open)} aria-label="Toggle navigation"><Menu size={21} /></button><div><p>SPIRAL COMICS</p><h1>Good afternoon, Rich.</h1></div><div className="top-actions"><button aria-label="Search"><Search size={19} /></button><button aria-label="Notifications"><Bell size={19} /><span /></button><button className="new-post"><Plus size={16} /> New post</button></div></header>
         <div className="content" id="compose">
-          <div className="page-heading"><div><p className="eyebrow">CREATE & PUBLISH</p><h2>Compose a post</h2><p>Write once, then share everywhere your readers are.</p></div><button className="draft-button" onClick={saveDraft}>Save draft</button></div>
+          <div className="page-heading"><div><p className="eyebrow">CREATE & PUBLISH</p><h2>{editingId ? 'Edit scheduled post' : 'Compose a post'}</h2><p>{editingId ? 'Update the copy or publishing time, then save your changes.' : 'Write once, then share everywhere your readers are.'}</p></div><button className="draft-button" onClick={() => void saveDraft()}>{editingId ? 'Save as draft' : 'Save draft'}</button></div>
           <div className="compose-grid">
             <section className="composer-card">
               <div className="field-block"><div className="field-label"><label>Publish to</label><span>{selected.length} of {connectedCount} selected</span></div><div className="channel-pills">{channels.map((channel) => <button key={channel.id} className={`${selected.includes(channel.id) ? 'selected' : ''} ${!channel.connected ? 'disabled' : ''}`} onClick={() => toggleChannel(channel.id)} aria-pressed={selected.includes(channel.id)}><ChannelMark id={channel.id} small /> {channel.name}{selected.includes(channel.id) && <Check size={14} />}</button>)}</div></div>
               <div className="field-block copy-field"><div className="field-label"><label htmlFor="post-copy">Post copy</label><span>{copy.length} / {characterLimit}</span></div><textarea id="post-copy" value={copy} maxLength={characterLimit} onChange={(event) => setCopy(event.target.value)} placeholder="What’s happening at Spiral Comics?" />{media && <div className="media-chip"><ImageIcon size={14} /><span>{media.filename}</span><button onClick={() => setMedia(null)} aria-label="Remove image"><X size={13} /></button></div>}<div className="editor-tools"><div><label className="editor-upload" title="Add image"><ImageIcon size={18} /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage(file); }} /></label><button title="Add link"><Link2 size={18} /></button><button title="Improve copy"><Sparkles size={18} /></button></div><span>Tip: posts with images get more engagement.</span></div></div>
               <div className="field-block"><div className="field-label"><label htmlFor="post-link">Link <em>Optional</em></label></div><div className="link-input"><Link2 size={17} /><input id="post-link" value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://spiralcomics.com/..." />{link && <button onClick={() => setLink('')} aria-label="Clear link"><X size={15} /></button>}</div></div>
               <div className="field-block schedule-block"><div className="field-label"><label>When should this go out?</label></div><div className="mode-switch"><button className={mode === 'now' ? 'active' : ''} onClick={() => setMode('now')}><Send size={16} /> Publish now</button><button className={mode === 'later' ? 'active' : ''} onClick={() => setMode('later')}><Clock3 size={16} /> Schedule for later</button></div>{mode === 'later' && <div className="date-row"><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input type="time" value={time} onChange={(event) => setTime(event.target.value)} /><span>Pacific Time</span></div>}</div>
-              <div className="composer-footer"><p><span /> {connectedCount ? 'Connected accounts are ready' : 'Connect Bluesky to begin'}</p><button className="schedule-button" disabled={submitting} onClick={submitPost}>{submitting ? 'Working…' : mode === 'later' ? <><CalendarClock size={17} /> Schedule post</> : <><Send size={17} /> Publish post</>}</button></div>
+              <div className="composer-footer"><p><span /> {connectedCount ? editingId ? 'Editing a saved post' : 'Connected accounts are ready' : 'Connect Bluesky to begin'}</p><button className="schedule-button" disabled={submitting} onClick={submitPost}>{submitting ? 'Working…' : mode === 'later' ? <><CalendarClock size={17} /> {editingId ? 'Update schedule' : 'Schedule post'}</> : <><Send size={17} /> Publish post</>}</button></div>
             </section>
 
             <aside className="preview-panel"><div className="preview-heading"><div><h3>Post preview</h3><span>{selected.includes('bluesky') ? 'Bluesky' : 'Instagram'}</span></div><button><MoreHorizontal size={18} /></button></div><div className="social-preview"><div className="preview-user"><div className="spiral-avatar">S</div><div><strong>spiralcomics</strong><small>{selected.includes('bluesky') ? 'spiralcomics.bsky.social' : 'Spiral Comics'} · <span>{selected.includes('bluesky') ? '☁' : '◎'}</span></small></div><MoreHorizontal size={17} /></div><div className="preview-art"><div className="art-lines"><span /><span /><span /></div><div className="art-word">SPIRAL</div><small>COMICS · STORIES THAT PULL YOU IN</small></div><div className="preview-actions"><span>♡</span><span>◯</span><span>⌁</span><span className="save-icon">▱</span></div><div className="preview-copy"><strong>spiralcomics</strong> <span className={!copy ? 'placeholder-copy' : ''}>{previewText}</span>{link && <a href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noreferrer"> {link} <ExternalLink size={11} /></a>}</div><p className="preview-date">SEPTEMBER 30</p></div><p className="preview-note">Preview is approximate. Each network may crop media or links differently.</p></aside>
           </div>
-          <section className="queue-section" id="queue"><div className="queue-heading"><div><p className="eyebrow">UP NEXT</p><h2>Content queue</h2></div><button>View calendar <ChevronDown size={15} /></button></div><div className="queue-list">{queue.slice(-4).map((post) => <article className="queue-item" key={post.id}><div className="date-tile"><strong>{post.date}</strong><span>{post.month}</span></div><div className="queue-copy"><h3>{post.title}</h3><p>{post.status === 'Scheduled' ? <><Clock3 size={13} /> {post.time}</> : post.time}</p></div><div className="queue-channels">{post.channels.map((id) => <ChannelMark id={id} small key={id} />)}</div><span className={`post-status ${post.status.toLowerCase()}`}>{post.status}</span><button aria-label={`More options for ${post.title}`}><MoreHorizontal size={18} /></button></article>)}</div></section>
+          <section className="queue-section" id="queue"><div className="queue-heading"><div><p className="eyebrow">REAL-TIME STATUS</p><h2>Content queue</h2></div><button onClick={() => void loadQueue()}><RotateCcw size={14} /> Refresh</button></div><div className="queue-list">{queueLoading ? <p className="queue-empty">Loading your posts…</p> : queue.length === 0 ? <p className="queue-empty">No saved posts yet. Your drafts and scheduled Bluesky posts will appear here.</p> : queue.map((post) => <article className="queue-item" key={post.id}><div className="date-tile"><strong>{post.date}</strong><span>{post.month}</span></div><div className="queue-copy"><h3>{post.title}</h3><p>{post.scheduledAt ? <><Clock3 size={13} /> {post.time}</> : post.time}{post.error && <span className="queue-error"> · {post.error}</span>}</p></div><div className="queue-channels">{post.channels.map((id) => <ChannelMark id={id} small key={id} />)}</div><span className={`post-status ${post.status.toLowerCase()}`}>{post.status}</span><div className="queue-actions">{post.externalUrl && <a href={post.externalUrl} target="_blank" rel="noreferrer" title="View on Bluesky"><ExternalLink size={15} /></a>}{['Scheduled', 'Draft', 'Failed'].includes(post.status) && <button onClick={() => editPost(post)} title="Edit post"><Pencil size={15} /></button>}{post.status === 'Failed' && <button onClick={() => void queueAction(post, 'retry')} title="Retry now"><RotateCcw size={15} /></button>}{['Scheduled', 'Draft', 'Failed'].includes(post.status) && <button onClick={() => void queueAction(post, 'cancel')} title="Cancel post"><Trash2 size={15} /></button>}</div></article>)}</div></section>
         </div>
       </section>
       {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
