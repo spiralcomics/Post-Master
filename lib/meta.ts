@@ -12,7 +12,8 @@ export type MetaConfig = {
 export type MetaToken = { accessToken: string; expiresAt?: number };
 
 const SITE_ORIGIN = 'https://spiral-comics-postmaster.rrobinson81.chatgpt.site';
-const GRAPH_VERSION = 'v24.0';
+const INSTAGRAM_GRAPH_VERSION = 'v24.0';
+const THREADS_GRAPH_VERSION = 'v1.0';
 
 export const metaConfigStore = () => createSecureStore<MetaConfig>('meta-config');
 export const metaTokenStore = () => createSecureStore<MetaToken>('meta-token');
@@ -58,7 +59,7 @@ export async function exchangeMetaCode(platform: MetaPlatform, code: string, con
   exchangeUrl.searchParams.set('client_secret', clientSecret);
   exchangeUrl.searchParams.set('access_token', short.access_token);
   const long = await graphJson<{ access_token: string; expires_in?: number }>(exchangeUrl);
-  const base = platform === 'instagram' ? 'https://graph.instagram.com' : `https://graph.threads.net/${GRAPH_VERSION}`;
+  const base = platform === 'instagram' ? 'https://graph.instagram.com' : `https://graph.threads.net/${THREADS_GRAPH_VERSION}`;
   const profileUrl = new URL(`${base}/me`);
   profileUrl.searchParams.set('fields', platform === 'instagram' ? 'user_id,username' : 'id,username');
   profileUrl.searchParams.set('access_token', long.access_token);
@@ -111,7 +112,7 @@ export async function publishMeta(postId: string, userId: string, platform: Meta
     if (post.media_id) media = await db.prepare('SELECT id, object_key, content_type FROM media_assets WHERE id = ? AND user_id = ?').bind(post.media_id, userId).first<MediaRow>();
     if (platform === 'instagram' && !media) throw new Error('Instagram feed posts require an image. Attach an image and retry.');
     const imageUrl = media ? await signedMediaUrl(media.id) : undefined;
-    const apiBase = platform === 'instagram' ? `https://graph.instagram.com/${GRAPH_VERSION}` : `https://graph.threads.net/${GRAPH_VERSION}`;
+    const apiBase = platform === 'instagram' ? `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}` : `https://graph.threads.net/${THREADS_GRAPH_VERSION}`;
     const createPath = platform === 'instagram' ? `${apiBase}/${connection.account_id}/media` : `${apiBase}/${connection.account_id}/threads`;
     const createForm = new URLSearchParams({ access_token: token.accessToken });
     if (platform === 'instagram') { createForm.set('image_url', imageUrl!); createForm.set('caption', text); }
