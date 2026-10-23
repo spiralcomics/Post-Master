@@ -17,7 +17,7 @@ export async function POST(request: Request) {
 
     const id = crypto.randomUUID();
     const objectKey = `${userId}/${id}`;
-    const blob = await put(objectKey, file, { access: 'public', addRandomSuffix: false, contentType: file.type });
+    const blob = await put(objectKey, file, { access: 'private', addRandomSuffix: false, contentType: file.type });
     await getDb().prepare(`INSERT INTO media_assets (id, user_id, object_key, filename, content_type, size_bytes, alt_text, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, userId, blob.url, file.name, file.type, file.size, altText || null, Date.now()).run();
     return Response.json({ media: { id, filename: file.name, contentType: file.type, sizeBytes: file.size, altText } }, { status: 201 });
