@@ -75,7 +75,7 @@ export async function publishDuePosts(userId?: string, limit = 10) {
   const now = Date.now();
   const retryBefore = now - 5 * 60 * 1000;
   const ownerClause = userId ? 'AND p.user_id = ?' : '';
-  const query = `SELECT DISTINCT p.id, p.user_id
+  const query = `SELECT DISTINCT p.id, p.user_id, p.scheduled_at
     FROM posts p
     JOIN post_deliveries d ON d.post_id = p.id
     WHERE p.scheduled_at IS NOT NULL AND p.scheduled_at <= ?
