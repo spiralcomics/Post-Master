@@ -148,6 +148,6 @@ export async function publishMeta(postId: string, userId: string, platform: Meta
 export async function getPublicMedia(mediaId: string) {
   const media = await getDb().prepare('SELECT object_key, content_type FROM media_assets WHERE id = ?').bind(mediaId).first<{ object_key: string; content_type: string }>();
   if (!media) return null;
-  const object = await get(media.object_key, { access: 'public' });
+  const object = await get(media.object_key, { access: 'private' });
   return object?.statusCode === 200 ? { stream: object.stream, contentType: media.content_type } : null;
 }
