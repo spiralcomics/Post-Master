@@ -1,0 +1,20 @@
+name: Publish scheduled posts
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish posts that are due
+        env:
+          POSTMASTER_URL: ${{ secrets.POSTMASTER_URL }}
+          POSTMASTER_CRON_SECRET: ${{ secrets.POSTMASTER_CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $POSTMASTER_CRON_SECRET" \
+            "$POSTMASTER_URL/api/jobs/publish-due"

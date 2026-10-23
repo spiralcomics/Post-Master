@@ -1,9 +1,8 @@
 import { getDb } from '@/db';
 import { exchangeMetaCode, metaConfigStore, metaStateStore, metaTokenStore, type MetaPlatform } from '@/lib/meta';
+import { siteOrigin } from '@/lib/config';
 
-const SITE_ORIGIN = 'https://spiral-comics-postmaster.rrobinson81.chatgpt.site';
-
-export async function GET(request: Request, context: { params: Promise<{ platform: string }> | { platform: string } }) {
+export async function GET(request: Request, context: { params: Promise<{ platform: string }> }) {
   const url = new URL(request.url);
   const platform = (await context.params).platform as MetaPlatform;
   try {
@@ -19,9 +18,9 @@ export async function GET(request: Request, context: { params: Promise<{ platfor
       VALUES (?, ?, ?, ?, ?, ?, 'connected', ?, ?)
       ON CONFLICT(user_id, platform) DO UPDATE SET account_id = excluded.account_id, handle = excluded.handle, display_name = excluded.display_name, status = 'connected', updated_at = excluded.updated_at`)
       .bind(crypto.randomUUID(), saved.userId, platform, account.accountId, account.username, account.username, now, now).run();
-    return Response.redirect(`${SITE_ORIGIN}/?connected=${platform}`, 302);
+    return Response.redirect(`${siteOrigin()}/?connected=${platform}`, 302);
   } catch (error) {
     const message = encodeURIComponent(error instanceof Error ? error.message : 'Meta connection failed.');
-    return Response.redirect(`${SITE_ORIGIN}/?connection_error=${message}`, 302);
+    return Response.redirect(`${siteOrigin()}/?connection_error=${message}`, 302);
   }
 }

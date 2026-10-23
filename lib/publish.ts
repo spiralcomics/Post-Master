@@ -1,5 +1,5 @@
 import { Agent, RichText } from '@atproto/api';
-import { getDb, getFiles } from '@/db';
+import { getDb } from '@/db';
 import { getBlueskyAgent } from './bluesky';
 import { publishMeta, type MetaPlatform } from './meta';
 
@@ -27,9 +27,9 @@ export async function publishBluesky(postId: string, userId: string) {
     if (post.media_id) {
       const media = await db.prepare('SELECT object_key, content_type, alt_text FROM media_assets WHERE id = ? AND user_id = ?').bind(post.media_id, userId).first<MediaRow>();
       if (media) {
-        const object = await getFiles().get(media.object_key);
-        if (!object) throw new Error('The attached image is no longer available.');
-        const uploaded = await agent.uploadBlob(new Uint8Array(await object.arrayBuffer()), { encoding: media.content_type });
+        const response = await fetch(media.object_key);
+        if (!response.ok) throw new Error('The attached image is no longer available.');
+        const uploaded = await agent.uploadBlob(new Uint8Array(await response.arrayBuffer()), { encoding: media.content_type });
         embed = { $type: 'app.bsky.embed.images' as const, images: [{ alt: media.alt_text || '', image: uploaded.data.blob }] };
       }
     }

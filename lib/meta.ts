@@ -1,6 +1,7 @@
-import { env } from 'cloudflare:workers';
-import { getDb, getFiles, getTokenKey } from '@/db';
+import { get } from '@vercel/blob';
+import { getDb, getTokenKey } from '@/db';
 import { createSecureStore } from './secure-store';
+import { siteOrigin } from './config';
 
 export type MetaPlatform = 'instagram' | 'threads';
 export type MetaConfig = {
@@ -11,7 +12,6 @@ export type MetaConfig = {
 };
 export type MetaToken = { accessToken: string; expiresAt?: number };
 
-const SITE_ORIGIN = 'https://spiral-comics-postmaster.rrobinson81.chatgpt.site';
 const INSTAGRAM_GRAPH_VERSION = 'v24.0';
 const THREADS_GRAPH_VERSION = 'v1.0';
 
@@ -20,7 +20,7 @@ export const metaTokenStore = () => createSecureStore<MetaToken>('meta-token');
 export const metaStateStore = () => createSecureStore<{ userId: string; platform: MetaPlatform }>('meta-oauth-state', 900);
 
 export function metaCallback(platform: MetaPlatform) {
-  return `${SITE_ORIGIN}/api/oauth/meta/${platform}/callback`;
+  return `${siteOrigin()}/api/oauth/meta/${platform}/callback`;
 }
 
 export function metaCredentials(config: MetaConfig, platform: MetaPlatform) {
@@ -79,10 +79,13 @@ function keyBytes() {
 function hex(bytes: Uint8Array) { return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(''); }
 
 export async function signedMediaUrl(mediaId: string) {
+  const media = await getDb().prepare('SELECT object_key FROM media_assets WHERE id = ?').bind(mediaId).first<{ object_key: string }>();
+  if (!media) throw new Error('The attached image is no longer available.');
+  if (media.object_key.startsWith('https://')) return media.object_key;
   const expires = Date.now() + 15 * 60 * 1000;
   const key = await crypto.subtle.importKey('raw', keyBytes(), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${mediaId}.${expires}`));
-  return `${SITE_ORIGIN}/api/media/public/${encodeURIComponent(mediaId)}?expires=${expires}&sig=${hex(new Uint8Array(signature))}`;
+  return `${siteOrigin()}/api/media/public/${encodeURIComponent(mediaId)}?expires=${expires}&sig=${hex(new Uint8Array(signature))}`;
 }
 
 export async function verifyMediaSignature(mediaId: string, expires: number, signature: string) {
@@ -145,6 +148,6 @@ export async function publishMeta(postId: string, userId: string, platform: Meta
 export async function getPublicMedia(mediaId: string) {
   const media = await getDb().prepare('SELECT object_key, content_type FROM media_assets WHERE id = ?').bind(mediaId).first<{ object_key: string; content_type: string }>();
   if (!media) return null;
-  const object = await getFiles().get(media.object_key);
-  return object ? { object, contentType: media.content_type } : null;
+  const object = await get(media.object_key, { access: 'public' });
+  return object?.statusCode === 200 ? { stream: object.stream, contentType: media.content_type } : null;
 }

@@ -1,9 +1,9 @@
 import { metaAuthorizationUrl, metaConfigStore, metaCredentials, metaStateStore, type MetaPlatform } from '@/lib/meta';
 import { authError, requireUserId } from '@/lib/user';
 
-export async function GET(request: Request, context: { params: Promise<{ platform: string }> | { platform: string } }) {
+export async function GET(request: Request, context: { params: Promise<{ platform: string }> }) {
   try {
-    const userId = requireUserId(request);
+    const userId = await requireUserId();
     const platform = (await context.params).platform as MetaPlatform;
     if (!['instagram', 'threads'].includes(platform)) return Response.json({ error: 'Unsupported Meta platform.' }, { status: 404 });
     const config = await metaConfigStore().get(userId) || {};

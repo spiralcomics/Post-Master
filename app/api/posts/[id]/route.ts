@@ -2,13 +2,13 @@ import { getDb } from '@/db';
 import { publishPostDeliveries } from '@/lib/publish';
 import { authError, requireUserId } from '@/lib/user';
 
-async function postId(context: { params: Promise<{ id: string }> | { id: string } }) {
+async function postId(context: { params: Promise<{ id: string }> }) {
   return (await context.params).id;
 }
 
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const userId = requireUserId(request);
+    const userId = await requireUserId();
     const id = await postId(context);
     const body = await request.json() as { content?: unknown; linkUrl?: unknown; scheduledAt?: unknown; action?: unknown; publishNow?: unknown };
     const db = getDb();
@@ -48,9 +48,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 }
 
-export async function DELETE(request: Request, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const userId = requireUserId(request);
+    const userId = await requireUserId();
     const id = await postId(context);
     const db = getDb();
     const now = Date.now();

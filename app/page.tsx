@@ -1,11 +1,12 @@
 import { LockKeyhole } from 'lucide-react';
 import DashboardClient from './dashboard-client';
-import { chatGPTSignInPath, getChatGPTUser } from './chatgpt-auth';
+import SignInButton from './sign-in-button';
+import { currentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const user = await getChatGPTUser();
+  const user = await currentUser();
 
   if (!user) {
     return (
@@ -19,8 +20,8 @@ export default async function Home() {
           <p className="eyebrow">PRIVATE WORKSPACE</p>
           <h1>Sign in to manage Spiral Comics</h1>
           <p>Your posts, schedules, uploads, and connected social accounts stay tied to your secure Postmaster profile.</p>
-          <a className="signin-button" href={chatGPTSignInPath('/')} target="_top">Sign in with ChatGPT</a>
-          <small className="signin-note">The Bluesky authorization service remains publicly discoverable, but your Postmaster data does not.</small>
+          <SignInButton />
+          <small className="signin-note">Only the configured Spiral Comics GitHub account can enter this workspace.</small>
         </section>
       </main>
     );

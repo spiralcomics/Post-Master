@@ -1,10 +1,10 @@
 import { Agent } from '@atproto/api';
 import { JoseKey } from '@atproto/jwk-jose';
 import { NodeOAuthClient, requestLocalLock, type NodeSavedSession, type NodeSavedState, type OAuthClientMetadataInput } from '@atproto/oauth-client-node';
-import { env } from 'cloudflare:workers';
 import { createSecureStore } from './secure-store';
+import { siteOrigin } from './config';
 
-export const SITE_ORIGIN = 'https://spiral-comics-postmaster.rrobinson81.chatgpt.site';
+export const SITE_ORIGIN = siteOrigin();
 export const BLUESKY_CALLBACK = `${SITE_ORIGIN}/api/oauth/bluesky/callback`;
 export const BLUESKY_METADATA = `${SITE_ORIGIN}/api/oauth/bluesky/client-metadata.json`;
 export const BLUESKY_JWKS = `${SITE_ORIGIN}/api/oauth/bluesky/jwks.json`;
@@ -59,17 +59,18 @@ export const clientMetadata = {
 } satisfies OAuthClientMetadataInput;
 
 export async function getBlueskyClient(): Promise<NodeOAuthClient> {
-  if (!env.POSTMASTER_OAUTH_PRIVATE_JWK) throw new Error('Bluesky OAuth signing key is unavailable.');
-  const signingKey = await JoseKey.fromJWK(env.POSTMASTER_OAUTH_PRIVATE_JWK, 'postmaster-1');
+  const rawSigningKey = process.env.POSTMASTER_OAUTH_PRIVATE_JWK;
+  if (!rawSigningKey) throw new Error('Bluesky OAuth signing key is unavailable.');
+  const signingKey = await JoseKey.fromJWK(JSON.parse(rawSigningKey), 'postmaster-1');
   return new NodeOAuthClient({
     clientMetadata,
     keyset: [signingKey],
     stateStore: createSecureStore<NodeSavedState>('bluesky-state', 900),
     sessionStore: createSecureStore<NodeSavedSession>('bluesky-session'),
-    identityResolver: { resolve: resolveBlueskyIdentity },
+    identityResolver: { resolve: resolveBlueskyIdentity as never },
     // Prevent the Node client from eagerly constructing its DNS resolver.
     // Identity resolution is handled above over HTTPS for the Worker runtime.
-    handleResolver: { resolve: async () => undefined },
+    handleResolver: { resolve: (async () => undefined) as never },
     requestLock: requestLocalLock,
   });
 }

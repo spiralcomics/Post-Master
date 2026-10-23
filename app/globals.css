@@ -30,7 +30,7 @@
 
 @media(max-width:760px){.queue-actions{grid-column:2 / 4}.queue-item{padding-top:14px;padding-bottom:14px}.queue-copy h3{white-space:normal}.queue-copy p{align-items:flex-start;flex-wrap:wrap}}
 @media(max-width:520px){.topbar h1{font-size:14px}.top-actions .new-post{padding:0 11px;font-size:0}.top-actions .new-post svg{width:18px;height:18px}.page-heading p{line-height:1.5}.field-block{padding:20px 17px}.copy-field{padding-bottom:0}.editor-tools>span{display:none}.schedule-block .mode-switch{display:grid;grid-template-columns:1fr 1fr}.date-row{flex-wrap:wrap}.composer-footer{align-items:flex-start;flex-direction:column}.schedule-button{width:100%;justify-content:center}.preview-art{height:210px}}
-/* Public sites use a short ChatGPT sign-in step before opening the private workspace. */
+/* Public deployments use a short GitHub sign-in step before opening the private workspace. */
 .signin-shell {
   min-height: 100vh;
   display: grid;
@@ -56,7 +56,7 @@
 .signin-icon { width: 52px; height: 52px; display: grid; place-items: center; margin: 0 auto 18px; border-radius: 50%; background: #1f1b17; color: #fffdf8; }
 .signin-card h1 { margin: 8px 0 12px; font-size: clamp(1.85rem, 6vw, 2.55rem); line-height: 1.04; letter-spacing: -0.045em; color: #1f1b17; }
 .signin-card > p:not(.eyebrow) { margin: 0 auto; max-width: 39ch; color: #6f665e; line-height: 1.6; }
-.signin-button { display: block; margin: 28px 0 18px; padding: 14px 20px; border-radius: 10px; background: #e6522c; color: white; font-weight: 750; text-decoration: none; box-shadow: 0 8px 20px rgba(230, 82, 44, 0.24); }
+.signin-button { display: block; width: 100%; margin: 28px 0 18px; padding: 14px 20px; border: 0; border-radius: 10px; background: #e6522c; color: white; font-weight: 750; text-decoration: none; box-shadow: 0 8px 20px rgba(230, 82, 44, 0.24); }
 .signin-button:hover { background: #ca4321; transform: translateY(-1px); }
 .signin-button:focus-visible { outline: 3px solid rgba(25, 141, 243, 0.4); outline-offset: 3px; }
 .signin-note { display: block; color: #8a8178; line-height: 1.45; }

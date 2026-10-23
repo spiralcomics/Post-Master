@@ -6,7 +6,7 @@ const PLATFORMS = new Set(['bluesky', 'instagram', 'threads']);
 
 export async function GET(request: Request) {
   try {
-    const userId = requireUserId(request);
+    const userId = await requireUserId();
     await publishDuePosts(userId);
     const posts = await getDb().prepare(`SELECT id, content, link_url, media_id, scheduled_at, status, created_at, updated_at
       FROM posts WHERE user_id = ? ORDER BY COALESCE(scheduled_at, created_at) ASC LIMIT 100`).bind(userId).all();
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const userId = requireUserId(request);
+    const userId = await requireUserId();
     const body = await request.json() as { content?: unknown; linkUrl?: unknown; mediaId?: unknown; scheduledAt?: unknown; platforms?: unknown; publishNow?: unknown; draft?: unknown };
     const content = typeof body.content === 'string' ? body.content.trim() : '';
     const platforms = Array.isArray(body.platforms) ? [...new Set(body.platforms.map(String))] : [];

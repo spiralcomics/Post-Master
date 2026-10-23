@@ -4,7 +4,7 @@ import { authError, requireUserId } from '@/lib/user';
 
 export async function GET(request: Request) {
   try {
-    const userId = requireUserId(request);
+    const userId = await requireUserId();
     const url = new URL(request.url);
     const handle = (url.searchParams.get('handle') || 'spiralcomics.bsky.social').trim();
     const state = crypto.randomUUID();

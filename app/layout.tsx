@@ -1,19 +1,9 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { siteOrigin } from '@/lib/config';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
-
 export const metadata: Metadata = {
-  metadataBase: new URL('https://spiral-comics-postmaster.magic-daisy-1168.chatgpt.site'),
+  metadataBase: new URL(siteOrigin()),
   title: 'Postmaster — Spiral Comics Social Studio',
   description: 'Create, schedule, and publish Spiral Comics content across every social channel from one place.',
   openGraph: {
@@ -36,11 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

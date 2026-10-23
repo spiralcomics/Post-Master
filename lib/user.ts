@@ -1,7 +1,9 @@
-export function requireUserId(request: Request): string {
-  const userId = request.headers.get('oai-authenticated-user-id');
-  if (!userId) throw new Error('AUTH_REQUIRED');
-  return userId;
+import { currentUser } from './auth';
+
+export async function requireUserId(): Promise<string> {
+  const user = await currentUser();
+  if (!user) throw new Error('AUTH_REQUIRED');
+  return user.id;
 }
 
 export function authError(error: unknown): Response | null {
